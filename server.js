@@ -1,12 +1,15 @@
 require('dotenv').config();
 const express = require('express');
+const http = require('http');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
+const { Server } = require('socket.io');
 const connectDB = require('./config/db');
 const errorMiddleware = require('./middleware/errorMiddleware');
+const initBattleSockets = require('./socket/battleManager');
 
 const authRoutes = require('./routes/authRoutes');
 const noteRoutes = require('./routes/noteRoutes');
@@ -62,6 +65,16 @@ app.use(errorMiddleware);
 
 const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, () => {
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: corsOptions.origin,
+    credentials: corsOptions.credentials
+  }
+});
+
+initBattleSockets(io);
+
+server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
