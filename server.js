@@ -10,6 +10,7 @@ const { Server } = require('socket.io');
 const connectDB = require('./config/db');
 const errorMiddleware = require('./middleware/errorMiddleware');
 const initBattleSockets = require('./socket/battleManager');
+const autoSeedMenu = require('./services/menuSeedService');
 
 const authRoutes = require('./routes/authRoutes');
 const noteRoutes = require('./routes/noteRoutes');
@@ -20,7 +21,9 @@ const restaurantRoutes = require('./routes/restaurant');
 
 const app = express();
 
-connectDB();
+connectDB().then(() => {
+  try { autoSeedMenu(); } catch (err) { console.error('[MenuSeed] Error:', err.message); }
+});
 
 app.use(helmet());
 app.use(morgan('combined'));

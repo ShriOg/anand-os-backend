@@ -130,10 +130,13 @@ function tickBattle(io, room) {
 }
 
 function initBattleSockets(io) {
+  // TEMP DEV MODE — socket auth disabled
+  // Re-enable JWT verification before production
   io.use((socket, next) => {
     const token = socket.handshake.auth && socket.handshake.auth.token;
     if (!token || !process.env.JWT_SECRET) {
-      return next(new Error('Unauthorized'));
+      socket.user = { id: socket.id, username: 'Guest' };
+      return next();
     }
 
     try {
@@ -141,7 +144,8 @@ function initBattleSockets(io) {
       socket.user = decoded;
       return next();
     } catch (err) {
-      return next(new Error('Unauthorized'));
+      socket.user = { id: socket.id, username: 'Guest' };
+      return next();
     }
   });
 

@@ -60,12 +60,10 @@ router.post(
 );
 
 // ── Admin-only ──
-// TEMPORARY: Admin protection disabled for development
-// Re-enable protect + admin middleware before production
+// TEMP DEV MODE — Re-enable admin protection before production
 router.get('/orders/today', /* protect, admin, */ getTodayOrders);
 
-// TEMPORARY: Admin protection disabled for development
-// Re-enable protect + admin middleware before production
+// TEMP DEV MODE — Re-enable admin protection before production
 router.patch(
   '/orders/:id/status',
   /* protect, */
@@ -80,8 +78,7 @@ router.patch(
   updateOrderStatus
 );
 
-// TEMPORARY: Admin protection disabled for development
-// Re-enable protect + admin middleware before production
+// TEMP DEV MODE — Re-enable admin protection before production
 router.patch(
   '/menu/:id',
   /* protect, */
@@ -91,8 +88,7 @@ router.patch(
   updateMenuItem
 );
 
-// TEMPORARY: Admin protection disabled for development
-// Re-enable protect + admin middleware before production
+// TEMP DEV MODE — Re-enable admin protection before production
 router.get('/stats', /* protect, admin, */ getStats);
 
 module.exports = router;
