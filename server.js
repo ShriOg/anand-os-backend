@@ -16,6 +16,7 @@ const noteRoutes = require('./routes/noteRoutes');
 const fileRoutes = require('./routes/fileRoutes');
 const aiRoutes = require('./routes/aiRoutes');
 const adminRoutes = require('./routes/adminRoutes');
+const restaurantRoutes = require('./routes/restaurant');
 
 const app = express();
 
@@ -56,6 +57,7 @@ app.use('/api/notes', noteRoutes);
 app.use('/api/files', fileRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/restaurant', restaurantRoutes);
 
 app.use('*', (req, res) => {
   res.status(404).json({ message: 'Route not found' });
@@ -72,6 +74,8 @@ const io = new Server(server, {
     credentials: corsOptions.credentials
   }
 });
+
+app.set('io', io);
 
 initBattleSockets(io);
 

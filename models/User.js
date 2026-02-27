@@ -25,7 +25,18 @@ const userSchema = new mongoose.Schema({
     type: String,
     enum: ['user', 'admin'],
     default: 'user'
-  }
+  },
+  points: {
+    type: Number,
+    default: 0
+  },
+  totalOrders: {
+    type: Number,
+    default: 0
+  },
+  badges: [{
+    type: String
+  }]
 }, {
   timestamps: true
 });
