@@ -7,12 +7,15 @@ const { protect } = require('../middleware/authMiddleware');
 const { admin } = require('../middleware/roleMiddleware');
 const User = require('../models/User');
 const {
+  getMenu,
+  getMenuAll,
   createOrder,
+  getAllOrders,
   getTodayOrders,
   updateOrderStatus,
-  getMenu,
   updateMenuItem,
-  getStats
+  getStats,
+  getAnalytics
 } = require('../controllers/restaurantController');
 
 const router = express.Router();
@@ -51,7 +54,7 @@ router.post(
     body('phone').trim().notEmpty().withMessage('Phone is required'),
     body('orderType').isIn(['DINE_IN', 'TAKEAWAY']).withMessage('Invalid order type'),
     body('items').isArray({ min: 1 }).withMessage('At least one item is required'),
-    body('items.*.itemId').notEmpty().withMessage('Item ID is required'),
+    body('items.*.itemId').isInt({ min: 1 }).withMessage('Item ID must be a positive integer'),
     body('items.*.size').trim().notEmpty().withMessage('Item size is required'),
     body('items.*.quantity').isInt({ min: 1 }).withMessage('Quantity must be at least 1')
   ],
@@ -60,14 +63,15 @@ router.post(
 );
 
 // ── Admin-only ──
-// TEMP DEV MODE — Re-enable admin protection before production
+router.get('/stats', /* protect, admin, */ getStats);
+router.get('/analytics', /* protect, admin, */ getAnalytics);
+router.get('/orders', /* protect, admin, */ getAllOrders);
 router.get('/orders/today', /* protect, admin, */ getTodayOrders);
+router.get('/menu/all', /* protect, admin, */ getMenuAll);
 
-// TEMP DEV MODE — Re-enable admin protection before production
 router.patch(
   '/orders/:id/status',
-  /* protect, */
-  /* admin, */
+  /* protect, admin, */
   [
     param('id').isMongoId().withMessage('Invalid order ID'),
     body('status')
@@ -78,17 +82,12 @@ router.patch(
   updateOrderStatus
 );
 
-// TEMP DEV MODE — Re-enable admin protection before production
 router.patch(
   '/menu/:id',
-  /* protect, */
-  /* admin, */
+  /* protect, admin, */
   [param('id').isMongoId().withMessage('Invalid menu item ID')],
   validate,
   updateMenuItem
 );
-
-// TEMP DEV MODE — Re-enable admin protection before production
-router.get('/stats', /* protect, admin, */ getStats);
 
 module.exports = router;

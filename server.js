@@ -29,7 +29,7 @@ app.use(helmet());
 app.use(morgan('combined'));
 
 const corsOptions = {
-  origin: process.env.CLIENT_URL || '*',
+  origin: '*',
   credentials: true,
   optionsSuccessStatus: 200
 };
@@ -73,14 +73,27 @@ const PORT = process.env.PORT || 5000;
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: corsOptions.origin,
-    credentials: corsOptions.credentials
+    origin: '*',
+    methods: ['GET', 'POST'],
+    credentials: true
   }
 });
 
 app.set('io', io);
 
+// Battle game sockets (separate namespace-like handling inside)
 initBattleSockets(io);
+
+// Restaurant admin sockets — join "admin" room for real-time order events
+io.on('connection', (socket) => {
+  socket.on('join-admin', () => {
+    socket.join('admin');
+  });
+
+  socket.on('leave-admin', () => {
+    socket.leave('admin');
+  });
+});
 
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);

@@ -27,16 +27,21 @@ const orderSchema = new mongoose.Schema({
   tableNumber: {
     type: Number
   },
+  note: {
+    type: String,
+    trim: true,
+    default: ''
+  },
   items: [{
     itemId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'MenuItem',
+      type: Number,
       required: true
     },
     name: { type: String, required: true },
     size: { type: String, required: true },
     price: { type: Number, required: true },
-    quantity: { type: Number, required: true, min: 1 }
+    quantity: { type: Number, required: true, min: 1 },
+    _id: false
   }],
   total: {
     type: Number,
@@ -52,7 +57,14 @@ const orderSchema = new mongoose.Schema({
     default: 'PENDING'
   }
 }, {
-  timestamps: true
+  timestamps: true,
+  toJSON: {
+    transform(_doc, ret) {
+      delete ret._id;
+      delete ret.__v;
+      return ret;
+    }
+  }
 });
 
 module.exports = mongoose.model('Order', orderSchema);

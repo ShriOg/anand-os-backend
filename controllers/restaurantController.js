@@ -3,23 +3,37 @@ const Order = require('../models/Order');
 const MenuItem = require('../models/MenuItem');
 const User = require('../models/User');
 
+// @desc    Get active menu (flat array, no _id leakage)
+// @route   GET /api/restaurant/menu
+const getMenu = asyncHandler(async (req, res) => {
+  const items = await MenuItem.find({ active: true }).sort({ category: 1, id: 1 });
+  res.json({ success: true, data: items });
+});
+
+// @desc    Get all menu items including inactive (admin)
+// @route   GET /api/restaurant/menu/all
+const getMenuAll = asyncHandler(async (req, res) => {
+  const items = await MenuItem.find().sort({ category: 1, id: 1 });
+  res.json({ success: true, data: items });
+});
+
 // @desc    Create a new order (auth optional, guest allowed)
 // @route   POST /api/restaurant/orders
 const createOrder = asyncHandler(async (req, res) => {
-  const { customerName, phone, orderType, persons, tableNumber, items } = req.body;
+  const { customerName, phone, orderType, persons, tableNumber, note, items } = req.body;
 
   if (!items || items.length === 0) {
     res.status(400);
     throw new Error('Order must contain at least one item');
   }
 
-  // Fetch all referenced menu items in one query
+  // Fetch all referenced menu items by numeric id
   const itemIds = items.map(i => i.itemId);
-  const menuItems = await MenuItem.find({ _id: { $in: itemIds }, active: true });
+  const menuItems = await MenuItem.find({ id: { $in: itemIds }, active: true });
 
   const menuMap = new Map();
   for (const mi of menuItems) {
-    menuMap.set(mi._id.toString(), mi);
+    menuMap.set(mi.id, mi);
   }
 
   // Recalculate total server-side — never trust frontend prices
@@ -43,7 +57,7 @@ const createOrder = asyncHandler(async (req, res) => {
     total += lineTotal;
 
     orderItems.push({
-      itemId: menuItem._id,
+      itemId: menuItem.id,
       name: menuItem.name,
       size: item.size,
       price: priceEntry.value,
@@ -58,8 +72,9 @@ const createOrder = asyncHandler(async (req, res) => {
     customerName,
     phone,
     orderType,
-    persons,
-    tableNumber,
+    persons: persons || undefined,
+    tableNumber: tableNumber || undefined,
+    note: note || '',
     items: orderItems,
     total,
     user: req.user ? req.user._id : undefined,
@@ -74,31 +89,47 @@ const createOrder = asyncHandler(async (req, res) => {
       { new: true }
     );
 
-    const badgesToAdd = [];
-    if (updatedUser.totalOrders >= 25 && !updatedUser.badges.includes('GOLD')) {
-      badgesToAdd.push('GOLD');
-    }
-    if (updatedUser.totalOrders >= 10 && !updatedUser.badges.includes('SILVER')) {
-      badgesToAdd.push('SILVER');
-    }
-    if (updatedUser.totalOrders >= 5 && !updatedUser.badges.includes('BRONZE')) {
-      badgesToAdd.push('BRONZE');
-    }
+    if (updatedUser) {
+      const badgesToAdd = [];
+      if (updatedUser.totalOrders >= 25 && !updatedUser.badges?.includes('GOLD')) {
+        badgesToAdd.push('GOLD');
+      }
+      if (updatedUser.totalOrders >= 10 && !updatedUser.badges?.includes('SILVER')) {
+        badgesToAdd.push('SILVER');
+      }
+      if (updatedUser.totalOrders >= 5 && !updatedUser.badges?.includes('BRONZE')) {
+        badgesToAdd.push('BRONZE');
+      }
 
-    if (badgesToAdd.length > 0) {
-      await User.findByIdAndUpdate(req.user._id, {
-        $addToSet: { badges: { $each: badgesToAdd } }
-      });
+      if (badgesToAdd.length > 0) {
+        await User.findByIdAndUpdate(req.user._id, {
+          $addToSet: { badges: { $each: badgesToAdd } }
+        });
+      }
     }
   }
 
-  // Emit real-time event (does not touch battle namespace)
+  // Emit to admin room only
   const io = req.app.get('io');
   if (io) {
-    io.emit('restaurant:new-order', order);
+    io.to('admin').emit('restaurant:new-order', order);
   }
 
-  res.status(201).json({ success: true, data: order });
+  res.status(201).json({
+    success: true,
+    data: {
+      orderId: order.orderId,
+      total: order.total,
+      status: order.status
+    }
+  });
+});
+
+// @desc    Get all orders (admin)
+// @route   GET /api/restaurant/orders
+const getAllOrders = asyncHandler(async (req, res) => {
+  const orders = await Order.find().sort({ createdAt: -1 });
+  res.json({ success: true, data: orders });
 });
 
 // @desc    Get today's orders (admin)
@@ -116,8 +147,14 @@ const getTodayOrders = asyncHandler(async (req, res) => {
 // @desc    Update order status (admin)
 // @route   PATCH /api/restaurant/orders/:id/status
 const updateOrderStatus = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  if (!id) {
+    res.status(400);
+    throw new Error('Order ID is required');
+  }
+
   const order = await Order.findByIdAndUpdate(
-    req.params.id,
+    id,
     { status: req.body.status },
     { new: true, runValidators: true }
   );
@@ -127,14 +164,13 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
     throw new Error('Order not found');
   }
 
-  res.json({ success: true, data: order });
-});
+  // Emit status update to admin room
+  const io = req.app.get('io');
+  if (io) {
+    io.to('admin').emit('restaurant:order-updated', order);
+  }
 
-// @desc    Get active menu
-// @route   GET /api/restaurant/menu
-const getMenu = asyncHandler(async (req, res) => {
-  const items = await MenuItem.find({ active: true }).sort({ category: 1, name: 1 });
-  res.json({ success: true, data: items });
+  res.json({ success: true, data: order });
 });
 
 // @desc    Update a menu item (admin)
@@ -160,7 +196,7 @@ const getStats = asyncHandler(async (req, res) => {
   const startOfDay = new Date();
   startOfDay.setHours(0, 0, 0, 0);
 
-  const [totalOrders, totalRevenueAgg, todayRevenueAgg, totalCustomers] = await Promise.all([
+  const [totalOrders, totalRevenueAgg, todayRevenueAgg, todayOrders, totalCustomers] = await Promise.all([
     Order.countDocuments(),
     Order.aggregate([
       { $match: { status: { $ne: 'CANCELLED' } } },
@@ -170,6 +206,7 @@ const getStats = asyncHandler(async (req, res) => {
       { $match: { createdAt: { $gte: startOfDay }, status: { $ne: 'CANCELLED' } } },
       { $group: { _id: null, total: { $sum: '$total' } } }
     ]),
+    Order.countDocuments({ createdAt: { $gte: startOfDay } }),
     Order.distinct('phone')
   ]);
 
@@ -177,6 +214,7 @@ const getStats = asyncHandler(async (req, res) => {
     success: true,
     data: {
       totalOrders,
+      todayOrders,
       totalRevenue: totalRevenueAgg[0]?.total || 0,
       todayRevenue: todayRevenueAgg[0]?.total || 0,
       totalCustomers: totalCustomers.length
@@ -184,11 +222,64 @@ const getStats = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Analytics data (admin)
+// @route   GET /api/restaurant/analytics
+const getAnalytics = asyncHandler(async (req, res) => {
+  const now = new Date();
+  const sevenDaysAgo = new Date(now);
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+  const [dailyRevenue, topItems, ordersByStatus] = await Promise.all([
+    // Revenue per day (last 7 days)
+    Order.aggregate([
+      { $match: { createdAt: { $gte: sevenDaysAgo }, status: { $ne: 'CANCELLED' } } },
+      {
+        $group: {
+          _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
+          revenue: { $sum: '$total' },
+          count: { $sum: 1 }
+        }
+      },
+      { $sort: { _id: 1 } }
+    ]),
+    // Top selling items
+    Order.aggregate([
+      { $match: { status: { $ne: 'CANCELLED' } } },
+      { $unwind: '$items' },
+      {
+        $group: {
+          _id: '$items.name',
+          totalQuantity: { $sum: '$items.quantity' },
+          totalRevenue: { $sum: { $multiply: ['$items.price', '$items.quantity'] } }
+        }
+      },
+      { $sort: { totalQuantity: -1 } },
+      { $limit: 10 }
+    ]),
+    // Orders by status
+    Order.aggregate([
+      { $group: { _id: '$status', count: { $sum: 1 } } }
+    ])
+  ]);
+
+  res.json({
+    success: true,
+    data: {
+      dailyRevenue,
+      topItems,
+      ordersByStatus
+    }
+  });
+});
+
 module.exports = {
+  getMenu,
+  getMenuAll,
   createOrder,
+  getAllOrders,
   getTodayOrders,
   updateOrderStatus,
-  getMenu,
   updateMenuItem,
-  getStats
+  getStats,
+  getAnalytics
 };
