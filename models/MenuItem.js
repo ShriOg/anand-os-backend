@@ -1,11 +1,6 @@
 const mongoose = require('mongoose');
 
 const menuItemSchema = new mongoose.Schema({
-  id: {
-    type: Number,
-    required: true,
-    unique: true
-  },
   name: {
     type: String,
     required: true,
@@ -37,7 +32,6 @@ const menuItemSchema = new mongoose.Schema({
   timestamps: true,
   toJSON: {
     transform(_doc, ret) {
-      delete ret._id;
       delete ret.__v;
       delete ret.createdAt;
       delete ret.updatedAt;

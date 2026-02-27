@@ -54,7 +54,7 @@ router.post(
     body('phone').trim().notEmpty().withMessage('Phone is required'),
     body('orderType').isIn(['DINE_IN', 'TAKEAWAY']).withMessage('Invalid order type'),
     body('items').isArray({ min: 1 }).withMessage('At least one item is required'),
-    body('items.*.itemId').isInt({ min: 1 }).withMessage('Item ID must be a positive integer'),
+    body('items.*.itemId').isMongoId().withMessage('Item ID must be a valid ID'),
     body('items.*.size').trim().notEmpty().withMessage('Item size is required'),
     body('items.*.quantity').isInt({ min: 1 }).withMessage('Quantity must be at least 1')
   ],

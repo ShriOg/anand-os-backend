@@ -34,7 +34,8 @@ const orderSchema = new mongoose.Schema({
   },
   items: [{
     itemId: {
-      type: Number,
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'MenuItem',
       required: true
     },
     name: { type: String, required: true },
@@ -60,7 +61,6 @@ const orderSchema = new mongoose.Schema({
   timestamps: true,
   toJSON: {
     transform(_doc, ret) {
-      delete ret._id;
       delete ret.__v;
       return ret;
     }

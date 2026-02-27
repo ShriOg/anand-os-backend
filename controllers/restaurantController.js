@@ -6,14 +6,14 @@ const User = require('../models/User');
 // @desc    Get active menu (flat array, no _id leakage)
 // @route   GET /api/restaurant/menu
 const getMenu = asyncHandler(async (req, res) => {
-  const items = await MenuItem.find({ active: true }).sort({ category: 1, id: 1 });
+  const items = await MenuItem.find({ active: true }).sort({ category: 1, name: 1 });
   res.json({ success: true, data: items });
 });
 
 // @desc    Get all menu items including inactive (admin)
 // @route   GET /api/restaurant/menu/all
 const getMenuAll = asyncHandler(async (req, res) => {
-  const items = await MenuItem.find().sort({ category: 1, id: 1 });
+  const items = await MenuItem.find().sort({ category: 1, name: 1 });
   res.json({ success: true, data: items });
 });
 
@@ -27,13 +27,13 @@ const createOrder = asyncHandler(async (req, res) => {
     throw new Error('Order must contain at least one item');
   }
 
-  // Fetch all referenced menu items by numeric id
+  // Fetch all referenced menu items by _id
   const itemIds = items.map(i => i.itemId);
-  const menuItems = await MenuItem.find({ id: { $in: itemIds }, active: true });
+  const menuItems = await MenuItem.find({ _id: { $in: itemIds }, active: true });
 
   const menuMap = new Map();
   for (const mi of menuItems) {
-    menuMap.set(mi.id, mi);
+    menuMap.set(mi._id.toString(), mi);
   }
 
   // Recalculate total server-side — never trust frontend prices
@@ -41,7 +41,7 @@ const createOrder = asyncHandler(async (req, res) => {
   const orderItems = [];
 
   for (const item of items) {
-    const menuItem = menuMap.get(item.itemId);
+    const menuItem = menuMap.get(item.itemId.toString());
     if (!menuItem) {
       res.status(400);
       throw new Error(`Menu item ${item.itemId} not found or inactive`);
@@ -57,7 +57,7 @@ const createOrder = asyncHandler(async (req, res) => {
     total += lineTotal;
 
     orderItems.push({
-      itemId: menuItem.id,
+      itemId: menuItem._id,
       name: menuItem.name,
       size: item.size,
       price: priceEntry.value,
