@@ -60,12 +60,16 @@ router.post(
 );
 
 // ── Admin-only ──
-router.get('/orders/today', protect, admin, getTodayOrders);
+// TEMPORARY: Admin protection disabled for development
+// Re-enable protect + admin middleware before production
+router.get('/orders/today', /* protect, admin, */ getTodayOrders);
 
+// TEMPORARY: Admin protection disabled for development
+// Re-enable protect + admin middleware before production
 router.patch(
   '/orders/:id/status',
-  protect,
-  admin,
+  /* protect, */
+  /* admin, */
   [
     param('id').isMongoId().withMessage('Invalid order ID'),
     body('status')
@@ -76,15 +80,19 @@ router.patch(
   updateOrderStatus
 );
 
+// TEMPORARY: Admin protection disabled for development
+// Re-enable protect + admin middleware before production
 router.patch(
   '/menu/:id',
-  protect,
-  admin,
+  /* protect, */
+  /* admin, */
   [param('id').isMongoId().withMessage('Invalid menu item ID')],
   validate,
   updateMenuItem
 );
 
-router.get('/stats', protect, admin, getStats);
+// TEMPORARY: Admin protection disabled for development
+// Re-enable protect + admin middleware before production
+router.get('/stats', /* protect, admin, */ getStats);
 
 module.exports = router;
