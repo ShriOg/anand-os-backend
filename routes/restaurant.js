@@ -6,6 +6,7 @@ const validate = require('../middleware/validateMiddleware');
 const { protect } = require('../middleware/authMiddleware');
 const { admin } = require('../middleware/roleMiddleware');
 const User = require('../models/User');
+const Customer = require('../models/Customer');
 const {
   getMenu,
   getMenuAll,
@@ -102,5 +103,24 @@ router.delete(
   validate,
   deleteOrder
 );
+
+router.get("/customers", async (req, res) => {
+  try {
+    const customers = await Customer.find({})
+      .sort({ createdAt: -1 });
+
+    return res.json({
+      success: true,
+      data: customers
+    });
+
+  } catch (error) {
+    console.error("Error fetching customers:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch customers"
+    });
+  }
+});
 
 module.exports = router;
