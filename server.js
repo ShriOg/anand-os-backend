@@ -99,6 +99,11 @@ io.on('connection', (socket) => {
   socket.on('leave-admin', () => {
     socket.leave('admin');
   });
+
+  socket.on('join-room', (phone) => {
+    if (!phone) return;
+    socket.join(`user_${phone}`);
+  });
 });
 
 server.listen(PORT, () => {

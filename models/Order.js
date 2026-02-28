@@ -56,6 +56,10 @@ const orderSchema = new mongoose.Schema({
     type: String,
     enum: ['PENDING', 'PREPARING', 'COMPLETED', 'CANCELLED'],
     default: 'PENDING'
+  },
+  isDeleted: {
+    type: Boolean,
+    default: false
   }
 }, {
   timestamps: true,

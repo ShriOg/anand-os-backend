@@ -109,10 +109,11 @@ const createOrder = asyncHandler(async (req, res) => {
     }
   }
 
-  // Emit new order to all connected clients
+  // Emit new order to the customer's room and admin room
   const io = req.app.get('io');
   if (io) {
-    io.emit('restaurant:new-order', order);
+    io.to(`user_${order.phone}`).emit('restaurant:new-order', order);
+    io.to('admin').emit('restaurant:new-order', order);
   }
 
   res.status(201).json({
@@ -128,7 +129,11 @@ const createOrder = asyncHandler(async (req, res) => {
 // @desc    Get all orders (admin)
 // @route   GET /api/restaurant/orders
 const getAllOrders = asyncHandler(async (req, res) => {
-  const orders = await Order.find().sort({ createdAt: -1 });
+  const filter = { isDeleted: false };
+  if (req.query.phone) {
+    filter.phone = req.query.phone;
+  }
+  const orders = await Order.find(filter).sort({ createdAt: -1 });
   res.json({ success: true, data: orders });
 });
 
@@ -138,7 +143,11 @@ const getTodayOrders = asyncHandler(async (req, res) => {
   const startOfDay = new Date();
   startOfDay.setHours(0, 0, 0, 0);
 
-  const orders = await Order.find({ createdAt: { $gte: startOfDay } })
+  const filter = { createdAt: { $gte: startOfDay }, isDeleted: false };
+  if (req.query.phone) {
+    filter.phone = req.query.phone;
+  }
+  const orders = await Order.find(filter)
     .sort({ createdAt: -1 });
 
   res.json({ success: true, data: orders });
@@ -164,10 +173,11 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
     throw new Error('Order not found');
   }
 
-  // Emit status update to all connected clients
+  // Emit status update to the customer's room and admin room
   const io = req.app.get('io');
   if (io) {
-    io.emit('restaurant:order-updated', order);
+    io.to(`user_${order.phone}`).emit('restaurant:order-updated', order);
+    io.to('admin').emit('restaurant:order-updated', order);
   }
 
   res.json({ success: true, data: order });
@@ -274,19 +284,27 @@ const getAnalytics = asyncHandler(async (req, res) => {
 
 // @desc    Delete an order (admin)
 // @route   DELETE /api/restaurant/orders/:id
-const deleteOrder = async (req, res) => {
-  try {
-    const order = await Order.findByIdAndDelete(req.params.id);
+const deleteOrder = asyncHandler(async (req, res) => {
+  const order = await Order.findByIdAndUpdate(
+    req.params.id,
+    { isDeleted: true },
+    { new: true }
+  );
 
-    if (!order) {
-      return res.status(404).json({ success: false, message: 'Order not found' });
-    }
-
-    res.json({ success: true, message: 'Order deleted' });
-  } catch (error) {
-    res.status(500).json({ success: false, message: 'Server error' });
+  if (!order) {
+    res.status(404);
+    throw new Error('Order not found');
   }
-};
+
+  // Emit deletion to the customer's room and admin room
+  const io = req.app.get('io');
+  if (io) {
+    io.to(`user_${order.phone}`).emit('restaurant:order-deleted', { orderId: order._id });
+    io.to('admin').emit('restaurant:order-deleted', { orderId: order._id });
+  }
+
+  res.json({ success: true, message: 'Order deleted' });
+});
 
 module.exports = {
   getMenu,
