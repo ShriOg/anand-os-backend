@@ -109,10 +109,10 @@ const createOrder = asyncHandler(async (req, res) => {
     }
   }
 
-  // Emit to admin room only
+  // Emit new order to all connected clients
   const io = req.app.get('io');
   if (io) {
-    io.to('admin').emit('restaurant:new-order', order);
+    io.emit('restaurant:new-order', order);
   }
 
   res.status(201).json({
@@ -164,10 +164,10 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
     throw new Error('Order not found');
   }
 
-  // Emit status update to admin room
+  // Emit status update to all connected clients
   const io = req.app.get('io');
   if (io) {
-    io.to('admin').emit('restaurant:order-updated', order);
+    io.emit('restaurant:order-updated', order);
   }
 
   res.json({ success: true, data: order });
