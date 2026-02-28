@@ -21,7 +21,10 @@ const getMenuAll = asyncHandler(async (req, res) => {
 // @desc    Create a new order (auth optional, guest allowed)
 // @route   POST /api/restaurant/orders
 const createOrder = asyncHandler(async (req, res) => {
-  const { customerName, phone, orderType, persons, tableNumber, note, items } = req.body;
+  let { customerName, phone, orderType, persons, tableNumber, note, items } = req.body;
+
+  // Normalize phone to prevent duplicates
+  phone = phone ? phone.trim() : phone;
 
   if (!items || items.length === 0) {
     res.status(400);
@@ -324,7 +327,11 @@ const deleteOrder = asyncHandler(async (req, res) => {
 // @desc    Get customer by phone
 // @route   GET /api/restaurant/users/:phone
 const getUserByPhone = asyncHandler(async (req, res) => {
-  const { phone } = req.params;
+  let { phone } = req.params;
+  
+  // Normalize phone to prevent lookup issues
+  phone = phone ? phone.trim() : phone;
+
   const customer = await Customer.findOne({ phone });
 
   if (!customer) {
