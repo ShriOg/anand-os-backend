@@ -16,7 +16,8 @@ const {
   updateMenuItem,
   getStats,
   getAnalytics,
-  deleteOrder
+  deleteOrder,
+  getUserByPhone
 } = require('../controllers/restaurantController');
 
 const router = express.Router();
@@ -44,6 +45,9 @@ const orderLimiter = rateLimit({
 
 // ── Public ──
 router.get('/menu', getMenu);
+
+// ── Customer lookup by phone ──
+router.get('/users/:phone', getUserByPhone);
 
 // ── Order creation (guest or authed) ──
 router.post(

@@ -2,6 +2,7 @@ const asyncHandler = require('../middleware/asyncHandler');
 const Order = require('../models/Order');
 const MenuItem = require('../models/MenuItem');
 const User = require('../models/User');
+const Customer = require('../models/Customer');
 
 // @desc    Get active menu (flat array, no _id leakage)
 // @route   GET /api/restaurant/menu
@@ -65,6 +66,12 @@ const createOrder = asyncHandler(async (req, res) => {
     });
   }
 
+  // Find or create persistent customer by phone
+  let customer = await Customer.findOne({ phone });
+  if (!customer) {
+    customer = await Customer.create({ name: customerName, phone });
+  }
+
   const orderId = `PF${Date.now().toString(36).toUpperCase()}`;
 
   const order = await Order.create({
@@ -80,6 +87,18 @@ const createOrder = asyncHandler(async (req, res) => {
     user: req.user ? req.user._id : undefined,
     status: 'PENDING'
   });
+
+  // Update persistent customer stats
+  await Customer.findOneAndUpdate(
+    { phone },
+    {
+      $inc: {
+        totalOrders: 1,
+        totalSpent: order.total,
+        points: Math.floor(order.total / 10)
+      }
+    }
+  );
 
   // Loyalty: award points + badges if authenticated
   if (req.user) {
@@ -302,6 +321,20 @@ const deleteOrder = asyncHandler(async (req, res) => {
   res.json({ success: true, message: 'Order deleted' });
 });
 
+// @desc    Get customer by phone
+// @route   GET /api/restaurant/users/:phone
+const getUserByPhone = asyncHandler(async (req, res) => {
+  const { phone } = req.params;
+  const customer = await Customer.findOne({ phone });
+
+  if (!customer) {
+    res.status(404);
+    throw new Error('Customer not found');
+  }
+
+  res.json({ success: true, data: customer });
+});
+
 module.exports = {
   getMenu,
   getMenuAll,
@@ -312,5 +345,6 @@ module.exports = {
   updateMenuItem,
   getStats,
   getAnalytics,
-  deleteOrder
+  deleteOrder,
+  getUserByPhone
 };
