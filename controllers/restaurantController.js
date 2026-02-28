@@ -129,7 +129,7 @@ const createOrder = asyncHandler(async (req, res) => {
 // @desc    Get all orders (admin)
 // @route   GET /api/restaurant/orders
 const getAllOrders = asyncHandler(async (req, res) => {
-  const filter = { isDeleted: false };
+  const filter = {};
   if (req.query.phone) {
     filter.phone = req.query.phone;
   }
@@ -143,7 +143,7 @@ const getTodayOrders = asyncHandler(async (req, res) => {
   const startOfDay = new Date();
   startOfDay.setHours(0, 0, 0, 0);
 
-  const filter = { createdAt: { $gte: startOfDay }, isDeleted: false };
+  const filter = { createdAt: { $gte: startOfDay } };
   if (req.query.phone) {
     filter.phone = req.query.phone;
   }
@@ -285,11 +285,7 @@ const getAnalytics = asyncHandler(async (req, res) => {
 // @desc    Delete an order (admin)
 // @route   DELETE /api/restaurant/orders/:id
 const deleteOrder = asyncHandler(async (req, res) => {
-  const order = await Order.findByIdAndUpdate(
-    req.params.id,
-    { isDeleted: true },
-    { new: true }
-  );
+  const order = await Order.findByIdAndDelete(req.params.id);
 
   if (!order) {
     res.status(404);
