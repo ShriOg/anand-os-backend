@@ -15,7 +15,8 @@ const {
   updateOrderStatus,
   updateMenuItem,
   getStats,
-  getAnalytics
+  getAnalytics,
+  deleteOrder
 } = require('../controllers/restaurantController');
 
 const router = express.Router();
@@ -88,6 +89,14 @@ router.patch(
   [param('id').isMongoId().withMessage('Invalid menu item ID')],
   validate,
   updateMenuItem
+);
+
+router.delete(
+  '/orders/:id',
+  /* protect, admin, */
+  [param('id').isMongoId().withMessage('Invalid order ID')],
+  validate,
+  deleteOrder
 );
 
 module.exports = router;

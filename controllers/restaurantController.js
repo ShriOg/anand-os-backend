@@ -272,6 +272,22 @@ const getAnalytics = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Delete an order (admin)
+// @route   DELETE /api/restaurant/orders/:id
+const deleteOrder = async (req, res) => {
+  try {
+    const order = await Order.findByIdAndDelete(req.params.id);
+
+    if (!order) {
+      return res.status(404).json({ success: false, message: 'Order not found' });
+    }
+
+    res.json({ success: true, message: 'Order deleted' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+};
+
 module.exports = {
   getMenu,
   getMenuAll,
@@ -281,5 +297,6 @@ module.exports = {
   updateOrderStatus,
   updateMenuItem,
   getStats,
-  getAnalytics
+  getAnalytics,
+  deleteOrder
 };
