@@ -369,40 +369,60 @@ const updateMenuItem = asyncHandler(async (req, res) => {
 
 // @desc    Dashboard stats (admin)
 // @route   GET /api/restaurant/stats
-const getStats = asyncHandler(async (req, res) => {
-  const startOfDay = new Date();
-  startOfDay.setHours(0, 0, 0, 0);
+const getStats = async (req, res) => {
+  try {
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
 
-  const [completedOrdersCount, totalRevenueAgg, todayRevenueAgg, completedTodayCount, totalCustomers] = await Promise.all([
-    // Count only COMPLETED orders (business metric)
-    Order.countDocuments({ status: 'COMPLETED' }),
-    // Revenue from COMPLETED orders only
-    Order.aggregate([
-      { $match: { status: 'COMPLETED' } },
-      { $group: { _id: null, total: { $sum: '$total' } } }
-    ]),
-    // Today's revenue from COMPLETED orders only
-    Order.aggregate([
-      { $match: { createdAt: { $gte: startOfDay }, status: 'COMPLETED' } },
-      { $group: { _id: null, total: { $sum: '$total' } } }
-    ]),
-    // Count only COMPLETED orders today (business metric)
-    Order.countDocuments({ createdAt: { $gte: startOfDay }, status: 'COMPLETED' }),
-    // Get total customers from Customer collection (single source of truth)
-    Customer.countDocuments()
-  ]);
+    const totalOrders = await Order.countDocuments();
 
-  res.json({
-    success: true,
-    data: {
-      totalOrders: completedOrdersCount,
-      todayOrders: completedTodayCount,
-      totalRevenue: totalRevenueAgg[0]?.total || 0,
-      todayRevenue: todayRevenueAgg[0]?.total || 0,
+    const todayOrders = await Order.countDocuments({
+      createdAt: { $gte: startOfToday }
+    });
+
+    const totalRevenueData = await Order.aggregate([
+      { $match: { status: { $ne: 'CANCELLED' } } },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: '$total' }
+        }
+      }
+    ]);
+    const totalRevenue = totalRevenueData[0]?.total || 0;
+
+    const todayRevenueData = await Order.aggregate([
+      {
+        $match: {
+          createdAt: { $gte: startOfToday },
+          status: { $ne: 'CANCELLED' }
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: '$total' }
+        }
+      }
+    ]);
+    const todayRevenue = todayRevenueData[0]?.total || 0;
+
+    const totalCustomers = await Order
+      .distinct('phone')
+      .then(arr => arr.length);
+
+    res.json({
+      totalOrders,
+      todayOrders,
+      totalRevenue,
+      todayRevenue,
       totalCustomers
-    }
-  });
-});
+    });
+  } catch (err) {
+    console.error('Stats error:', err);
+    res.status(500).json({ error: 'Failed to fetch stats' });
+  }
+};
 
 // @desc    Analytics data (admin)
 // @route   GET /api/restaurant/analytics
