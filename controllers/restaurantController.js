@@ -371,8 +371,16 @@ const updateMenuItem = asyncHandler(async (req, res) => {
 // @route   GET /api/restaurant/stats
 const getStats = async (req, res) => {
   try {
-    const startOfToday = new Date();
-    startOfToday.setHours(0, 0, 0, 0);
+    const now = new Date();
+
+    const istDateString = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).format(now);
+
+    const startOfToday = new Date(`${istDateString}T00:00:00.000+05:30`);
 
     const totalOrders = await Order.countDocuments();
 
