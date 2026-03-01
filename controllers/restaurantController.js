@@ -157,7 +157,7 @@ const createOrder = asyncHandler(async (req, res) => {
     { $unwind: '$items' },
     {
       $match: {
-        'items.itemId': { $nin: Array.from(orderedItemIds).map(id => require('mongoose').Types.ObjectId(id)) }
+        'items.itemId': { $nin: Array.from(orderedItemIds).map(id => new (require('mongoose').Types.ObjectId)(id)) }
       }
     },
     {
