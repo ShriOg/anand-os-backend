@@ -55,9 +55,14 @@ const orderSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['Pending', 'Preparing', 'Ready', 'Completed', 'Cancelled'],
+    enum: ['Pending', 'Preparing', 'Completed', 'Cancelled'],
     default: 'Pending'
-  }
+  },
+  acceptedAt: { type: Date },
+  completedAt: { type: Date },
+  estimatedMinutes: { type: Number },
+  estimatedCompletionTime: { type: Date },
+  actualCompletionTime: { type: Number }
 }, {
   timestamps: true,
   toJSON: {
@@ -71,8 +76,7 @@ const orderSchema = new mongoose.Schema({
 // ── Status transition rules ──
 const ALLOWED_TRANSITIONS = {
   Pending:   ['Preparing', 'Cancelled'],
-  Preparing: ['Ready'],
-  Ready:     ['Completed'],
+  Preparing: ['Completed'],
   Completed: [],
   Cancelled: []
 };

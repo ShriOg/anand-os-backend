@@ -3,6 +3,7 @@ const Order = require('../models/Order');
 const MenuItem = require('../models/MenuItem');
 const User = require('../models/User');
 const Customer = require('../models/Customer');
+const { calculateEstimation } = require('../services/estimationService');
 
 // @desc    Get active menu (flat array, no _id leakage)
 // @route   GET /api/restaurant/menu
@@ -77,6 +78,9 @@ const createOrder = asyncHandler(async (req, res) => {
 
   const orderId = `PF${Date.now().toString(36).toUpperCase()}`;
 
+  // AI-based estimation
+  const { estimatedMinutes, estimatedCompletionTime } = await calculateEstimation(orderItems);
+
   const order = await Order.create({
     orderId,
     customerName,
@@ -88,7 +92,9 @@ const createOrder = asyncHandler(async (req, res) => {
     items: orderItems,
     total,
     user: req.user ? req.user._id : undefined,
-    status: 'Pending'
+    status: 'Pending',
+    estimatedMinutes,
+    estimatedCompletionTime
   });
 
   // Update persistent customer stats
@@ -143,7 +149,9 @@ const createOrder = asyncHandler(async (req, res) => {
     data: {
       orderId: order.orderId,
       total: order.total,
-      status: order.status
+      status: order.status,
+      estimatedMinutes: order.estimatedMinutes,
+      estimatedCompletionTime: order.estimatedCompletionTime
     }
   });
 });
@@ -197,6 +205,17 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
   }
 
   order.status = req.body.status;
+
+  // Track timestamps for time estimation
+  if (req.body.status === 'Preparing') {
+    order.acceptedAt = new Date();
+  } else if (req.body.status === 'Completed') {
+    order.completedAt = new Date();
+    order.actualCompletionTime = Math.round(
+      (order.completedAt.getTime() - order.createdAt.getTime()) / 60000
+    );
+  }
+
   await order.save();
 
   // Emit status update to the customer's room and admin room

@@ -82,7 +82,7 @@ router.patch(
   [
     param('id').isMongoId().withMessage('Invalid order ID'),
     body('status')
-      .isIn(['Pending', 'Preparing', 'Ready', 'Completed', 'Cancelled'])
+      .isIn(['Pending', 'Preparing', 'Completed', 'Cancelled'])
       .withMessage('Invalid status')
   ],
   validate,
