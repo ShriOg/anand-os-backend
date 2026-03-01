@@ -218,6 +218,42 @@ const getTodayOrders = asyncHandler(async (req, res) => {
   res.json({ success: true, data: orders });
 });
 
+// @desc    Get order by custom orderId
+// @route   GET /api/restaurant/orders/:orderId
+const getOrderByCustomId = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+
+    if (!orderId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Order ID required'
+      });
+    }
+
+    const order = await Order.findOne({ orderId });
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: 'Order not found'
+      });
+    }
+
+    return res.json({
+      success: true,
+      order
+    });
+
+  } catch (err) {
+    console.error('Track order error:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+};
+
 // @desc    Update order status (admin)
 // @route   PATCH /api/restaurant/orders/:id/status
 const updateOrderStatus = asyncHandler(async (req, res) => {
@@ -705,6 +741,7 @@ module.exports = {
   createOrder,
   getAllOrders,
   getTodayOrders,
+  getOrderByCustomId,
   updateOrderStatus,
   updateMenuItem,
   getStats,

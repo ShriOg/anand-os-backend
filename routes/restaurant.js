@@ -14,6 +14,7 @@ const {
   createOrder,
   getAllOrders,
   getTodayOrders,
+  getOrderByCustomId,
   updateOrderStatus,
   updateMenuItem,
   getStats,
@@ -77,6 +78,7 @@ router.get('/analytics', /* protect, admin, */ getAnalytics);
 router.get('/insights', /* protect, admin, */ getInsights);
 router.get('/orders', /* protect, admin, */ getAllOrders);
 router.get('/orders/today', /* protect, admin, */ getTodayOrders);
+router.get('/orders/:orderId', getOrderByCustomId);
 router.get('/menu/all', /* protect, admin, */ getMenuAll);
 
 router.patch(
