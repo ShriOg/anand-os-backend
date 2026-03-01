@@ -18,7 +18,8 @@ const {
   getStats,
   getAnalytics,
   deleteOrder,
-  getUserByPhone
+  getUserByPhone,
+  cancelOrder
 } = require('../controllers/restaurantController');
 
 const router = express.Router();
@@ -81,7 +82,7 @@ router.patch(
   [
     param('id').isMongoId().withMessage('Invalid order ID'),
     body('status')
-      .isIn(['PENDING', 'PREPARING', 'COMPLETED', 'CANCELLED'])
+      .isIn(['Pending', 'Preparing', 'Ready', 'Completed', 'Cancelled'])
       .withMessage('Invalid status')
   ],
   validate,
@@ -102,6 +103,16 @@ router.delete(
   [param('id').isMongoId().withMessage('Invalid order ID')],
   validate,
   deleteOrder
+);
+
+// ── Cancel order by custom orderId ──
+router.patch(
+  '/orders/:orderId/cancel',
+  [
+    param('orderId').trim().notEmpty().withMessage('Order ID is required')
+  ],
+  validate,
+  cancelOrder
 );
 
 router.get("/customers", async (req, res) => {

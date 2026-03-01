@@ -88,7 +88,7 @@ const createOrder = asyncHandler(async (req, res) => {
     items: orderItems,
     total,
     user: req.user ? req.user._id : undefined,
-    status: 'PENDING'
+    status: 'Pending'
   });
 
   // Update persistent customer stats
@@ -184,16 +184,20 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
     throw new Error('Order ID is required');
   }
 
-  const order = await Order.findByIdAndUpdate(
-    id,
-    { status: req.body.status },
-    { new: true, runValidators: true }
-  );
-
+  const order = await Order.findById(id);
   if (!order) {
     res.status(404);
     throw new Error('Order not found');
   }
+
+  const { valid, message } = Order.validateTransition(order.status, req.body.status);
+  if (!valid) {
+    res.status(400);
+    throw new Error(message);
+  }
+
+  order.status = req.body.status;
+  await order.save();
 
   // Emit status update to the customer's room and admin room
   const io = req.app.get('io');
@@ -231,11 +235,11 @@ const getStats = asyncHandler(async (req, res) => {
   const [totalOrders, totalRevenueAgg, todayRevenueAgg, todayOrders, totalCustomers] = await Promise.all([
     Order.countDocuments(),
     Order.aggregate([
-      { $match: { status: { $ne: 'CANCELLED' } } },
+      { $match: { status: { $ne: 'Cancelled' } } },
       { $group: { _id: null, total: { $sum: '$total' } } }
     ]),
     Order.aggregate([
-      { $match: { createdAt: { $gte: startOfDay }, status: { $ne: 'CANCELLED' } } },
+      { $match: { createdAt: { $gte: startOfDay }, status: { $ne: 'Cancelled' } } },
       { $group: { _id: null, total: { $sum: '$total' } } }
     ]),
     Order.countDocuments({ createdAt: { $gte: startOfDay } }),
@@ -264,7 +268,7 @@ const getAnalytics = asyncHandler(async (req, res) => {
   const [dailyRevenue, topItems, ordersByStatus] = await Promise.all([
     // Revenue per day (last 7 days)
     Order.aggregate([
-      { $match: { createdAt: { $gte: sevenDaysAgo }, status: { $ne: 'CANCELLED' } } },
+      { $match: { createdAt: { $gte: sevenDaysAgo }, status: { $ne: 'Cancelled' } } },
       {
         $group: {
           _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
@@ -276,7 +280,7 @@ const getAnalytics = asyncHandler(async (req, res) => {
     ]),
     // Top selling items
     Order.aggregate([
-      { $match: { status: { $ne: 'CANCELLED' } } },
+      { $match: { status: { $ne: 'Cancelled' } } },
       { $unwind: '$items' },
       {
         $group: {
@@ -342,6 +346,39 @@ const getUserByPhone = asyncHandler(async (req, res) => {
   res.json({ success: true, data: customer });
 });
 
+// @desc    Cancel an order by custom orderId
+// @route   PATCH /api/restaurant/orders/:orderId/cancel
+const cancelOrder = asyncHandler(async (req, res) => {
+  const order = await Order.findOne({ orderId: req.params.orderId });
+
+  if (!order) {
+    res.status(404);
+    throw new Error('Order not found');
+  }
+
+  if (order.status === 'Cancelled') {
+    res.status(400);
+    throw new Error('Order is already cancelled');
+  }
+
+  const { valid, message } = Order.validateTransition(order.status, 'Cancelled');
+  if (!valid) {
+    res.status(400);
+    throw new Error(message);
+  }
+
+  order.status = 'Cancelled';
+  await order.save();
+
+  const io = req.app.get('io');
+  if (io) {
+    io.to(`user_${order.phone}`).emit('restaurant:order-updated', order);
+    io.to('admin').emit('restaurant:order-updated', order);
+  }
+
+  res.json({ success: true, data: order });
+});
+
 module.exports = {
   getMenu,
   getMenuAll,
@@ -353,5 +390,6 @@ module.exports = {
   getStats,
   getAnalytics,
   deleteOrder,
-  getUserByPhone
+  getUserByPhone,
+  cancelOrder
 };

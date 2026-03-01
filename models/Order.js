@@ -55,8 +55,8 @@ const orderSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['PENDING', 'PREPARING', 'COMPLETED', 'CANCELLED'],
-    default: 'PENDING'
+    enum: ['Pending', 'Preparing', 'Ready', 'Completed', 'Cancelled'],
+    default: 'Pending'
   }
 }, {
   timestamps: true,
@@ -67,5 +67,31 @@ const orderSchema = new mongoose.Schema({
     }
   }
 });
+
+// ── Status transition rules ──
+const ALLOWED_TRANSITIONS = {
+  Pending:   ['Preparing', 'Cancelled'],
+  Preparing: ['Ready'],
+  Ready:     ['Completed'],
+  Completed: [],
+  Cancelled: []
+};
+
+orderSchema.statics.ALLOWED_TRANSITIONS = ALLOWED_TRANSITIONS;
+
+/**
+ * Validate whether a status transition is allowed.
+ * Returns { valid, message }.
+ */
+orderSchema.statics.validateTransition = function (from, to) {
+  const allowed = ALLOWED_TRANSITIONS[from];
+  if (!allowed) {
+    return { valid: false, message: `Unknown current status: ${from}` };
+  }
+  if (!allowed.includes(to)) {
+    return { valid: false, message: `Transition from "${from}" to "${to}" is not allowed` };
+  }
+  return { valid: true };
+};
 
 module.exports = pramodDB.model('Order', orderSchema);
