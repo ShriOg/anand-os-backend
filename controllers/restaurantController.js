@@ -263,11 +263,21 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
   // Track timestamps for time estimation
   if (nextStatus === 'PREPARING') {
     order.acceptedAt = new Date();
+    
+    // Calculate dynamic estimation when order is accepted
+    const { estimatedMinutes, estimatedCompletionTime } = await calculateEstimation(order.items);
+    order.estimatedMinutes = estimatedMinutes;
+    order.estimatedCompletionTime = estimatedCompletionTime;
   } else if (nextStatus === 'COMPLETED') {
     order.completedAt = new Date();
-    order.actualCompletionTime = Math.round(
-      (order.completedAt.getTime() - order.createdAt.getTime()) / 60000
-    );
+    
+    // Calculate actual completion time from when order was accepted
+    if (order.acceptedAt) {
+      const actualMinutes = Math.round(
+        (order.completedAt.getTime() - order.acceptedAt.getTime()) / (1000 * 60)
+      );
+      order.actualCompletionTime = actualMinutes;
+    }
 
     // ONLY update customer stats when order is COMPLETED
     // This ensures revenue & loyalty metrics are accurate

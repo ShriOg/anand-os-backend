@@ -62,7 +62,7 @@ const orderSchema = new mongoose.Schema({
   completedAt: { type: Date },
   estimatedMinutes: { type: Number },
   estimatedCompletionTime: { type: Date },
-  actualCompletionTime: { type: Number }
+  actualCompletionTime: { type: Number } // in minutes, calculated from (completedAt - acceptedAt) / 60000
 }, {
   timestamps: true,
   toJSON: {
