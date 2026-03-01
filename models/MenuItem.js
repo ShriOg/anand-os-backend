@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { pramodDB } = require('../config/db');
 
 const menuItemSchema = new mongoose.Schema({
   name: {
@@ -40,4 +41,4 @@ const menuItemSchema = new mongoose.Schema({
   }
 });
 
-module.exports = mongoose.model('MenuItem', menuItemSchema);
+module.exports = pramodDB.model('MenuItem', menuItemSchema);

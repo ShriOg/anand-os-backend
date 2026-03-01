@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { osDB } = require('../config/db');
 
 const chatMessageSchema = new mongoose.Schema({
   user: {
@@ -18,4 +19,4 @@ const chatMessageSchema = new mongoose.Schema({
   timestamps: true
 });
 
-module.exports = mongoose.model('ChatMessage', chatMessageSchema);
+module.exports = osDB.model('ChatMessage', chatMessageSchema);

@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { osDB } = require('../config/db');
 
 const refreshTokenSchema = new mongoose.Schema({
   token: {
@@ -19,4 +20,4 @@ const refreshTokenSchema = new mongoose.Schema({
   timestamps: true
 });
 
-module.exports = mongoose.model('RefreshToken', refreshTokenSchema);
+module.exports = osDB.model('RefreshToken', refreshTokenSchema);

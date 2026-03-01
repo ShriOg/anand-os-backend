@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { pramodDB } = require('../config/db');
 
 const orderSchema = new mongoose.Schema({
   orderId: {
@@ -67,4 +68,4 @@ const orderSchema = new mongoose.Schema({
   }
 });
 
-module.exports = mongoose.model('Order', orderSchema);
+module.exports = pramodDB.model('Order', orderSchema);

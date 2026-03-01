@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { osDB } = require('../config/db');
 
 const noteSchema = new mongoose.Schema({
   title: {
@@ -19,4 +20,4 @@ const noteSchema = new mongoose.Schema({
   timestamps: true
 });
 
-module.exports = mongoose.model('Note', noteSchema);
+module.exports = osDB.model('Note', noteSchema);

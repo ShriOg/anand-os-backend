@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcrypt');
+const { osDB } = require('../config/db');
 
 const userSchema = new mongoose.Schema({
   username: {
@@ -54,4 +55,4 @@ userSchema.methods.matchPassword = async function(enteredPassword) {
   return await bcrypt.compare(enteredPassword, this.password);
 };
 
-module.exports = mongoose.model('User', userSchema);
+module.exports = osDB.model('User', userSchema);

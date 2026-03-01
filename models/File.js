@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { osDB } = require('../config/db');
 
 const fileSchema = new mongoose.Schema({
   filename: {
@@ -30,4 +31,4 @@ const fileSchema = new mongoose.Schema({
   timestamps: true
 });
 
-module.exports = mongoose.model('File', fileSchema);
+module.exports = osDB.model('File', fileSchema);

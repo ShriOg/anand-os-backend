@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { pramodDB } = require('../config/db');
 
 const customerSchema = new mongoose.Schema({
   name: String,
@@ -21,4 +22,4 @@ const customerSchema = new mongoose.Schema({
   }
 }, { timestamps: true });
 
-module.exports = mongoose.model('Customer', customerSchema);
+module.exports = pramodDB.model('Customer', customerSchema);
