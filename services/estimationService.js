@@ -19,7 +19,7 @@ function randomInRange(min, max) {
  */
 async function calculateEstimation(items) {
   const totalQuantity = items.reduce((sum, item) => sum + item.quantity, 0);
-  const activeOrders = await Order.countDocuments({ status: 'Preparing' });
+  const activeOrders = await Order.countDocuments({ status: 'PREPARING' });
 
   const baseTime = randomInRange(BASE_TIME_MIN, BASE_TIME_MAX);
   const itemTime = totalQuantity * randomInRange(PER_ITEM_MIN, PER_ITEM_MAX);

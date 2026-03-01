@@ -55,8 +55,8 @@ const orderSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['Pending', 'Preparing', 'Completed', 'Cancelled'],
-    default: 'Pending'
+    enum: ['PENDING', 'PREPARING', 'COMPLETED', 'CANCELLED'],
+    default: 'PENDING'
   },
   acceptedAt: { type: Date },
   completedAt: { type: Date },
@@ -75,10 +75,10 @@ const orderSchema = new mongoose.Schema({
 
 // ── Status transition rules ──
 const ALLOWED_TRANSITIONS = {
-  Pending:   ['Preparing', 'Cancelled'],
-  Preparing: ['Completed'],
-  Completed: [],
-  Cancelled: []
+  PENDING: ['PREPARING', 'CANCELLED'],
+  PREPARING: ['COMPLETED'],
+  COMPLETED: [],
+  CANCELLED: []
 };
 
 orderSchema.statics.ALLOWED_TRANSITIONS = ALLOWED_TRANSITIONS;
@@ -88,12 +88,18 @@ orderSchema.statics.ALLOWED_TRANSITIONS = ALLOWED_TRANSITIONS;
  * Returns { valid, message }.
  */
 orderSchema.statics.validateTransition = function (from, to) {
-  const allowed = ALLOWED_TRANSITIONS[from];
+  const currentStatus = from?.toUpperCase();
+  const nextStatus = to?.toUpperCase();
+
+  const allowed = ALLOWED_TRANSITIONS[currentStatus];
   if (!allowed) {
-    return { valid: false, message: `Unknown current status: ${from}` };
+    return { valid: false, message: `Unknown current status: ${currentStatus}` };
   }
-  if (!allowed.includes(to)) {
-    return { valid: false, message: `Transition from "${from}" to "${to}" is not allowed` };
+  if (!allowed.includes(nextStatus)) {
+    return {
+      valid: false,
+      message: `Transition from "${currentStatus}" to "${nextStatus}" is not allowed`
+    };
   }
   return { valid: true };
 };

@@ -92,7 +92,7 @@ const createOrder = asyncHandler(async (req, res) => {
     items: orderItems,
     total,
     user: req.user ? req.user._id : undefined,
-    status: 'Pending',
+    status: 'PENDING',
     estimatedMinutes,
     estimatedCompletionTime
   });
@@ -198,18 +198,37 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
     throw new Error('Order not found');
   }
 
-  const { valid, message } = Order.validateTransition(order.status, req.body.status);
-  if (!valid) {
-    res.status(400);
-    throw new Error(message);
+  const currentStatus = order.status?.toUpperCase();
+  const nextStatus = req.body.status?.toUpperCase();
+
+  switch (currentStatus) {
+    case 'PENDING':
+      if (nextStatus === 'PREPARING' || nextStatus === 'CANCELLED') {
+        order.status = nextStatus;
+      } else {
+        res.status(400);
+        throw new Error('Invalid transition');
+      }
+      break;
+
+    case 'PREPARING':
+      if (nextStatus === 'COMPLETED') {
+        order.status = nextStatus;
+      } else {
+        res.status(400);
+        throw new Error('Invalid transition');
+      }
+      break;
+
+    default:
+      res.status(400);
+      throw new Error('Unknown current status: ' + currentStatus);
   }
 
-  order.status = req.body.status;
-
   // Track timestamps for time estimation
-  if (req.body.status === 'Preparing') {
+  if (nextStatus === 'PREPARING') {
     order.acceptedAt = new Date();
-  } else if (req.body.status === 'Completed') {
+  } else if (nextStatus === 'COMPLETED') {
     order.completedAt = new Date();
     order.actualCompletionTime = Math.round(
       (order.completedAt.getTime() - order.createdAt.getTime()) / 60000
@@ -254,11 +273,11 @@ const getStats = asyncHandler(async (req, res) => {
   const [totalOrders, totalRevenueAgg, todayRevenueAgg, todayOrders, totalCustomers] = await Promise.all([
     Order.countDocuments(),
     Order.aggregate([
-      { $match: { status: { $ne: 'Cancelled' } } },
+      { $match: { status: { $ne: 'CANCELLED' } } },
       { $group: { _id: null, total: { $sum: '$total' } } }
     ]),
     Order.aggregate([
-      { $match: { createdAt: { $gte: startOfDay }, status: { $ne: 'Cancelled' } } },
+      { $match: { createdAt: { $gte: startOfDay }, status: { $ne: 'CANCELLED' } } },
       { $group: { _id: null, total: { $sum: '$total' } } }
     ]),
     Order.countDocuments({ createdAt: { $gte: startOfDay } }),
@@ -287,7 +306,7 @@ const getAnalytics = asyncHandler(async (req, res) => {
   const [dailyRevenue, topItems, ordersByStatus] = await Promise.all([
     // Revenue per day (last 7 days)
     Order.aggregate([
-      { $match: { createdAt: { $gte: sevenDaysAgo }, status: { $ne: 'Cancelled' } } },
+      { $match: { createdAt: { $gte: sevenDaysAgo }, status: { $ne: 'CANCELLED' } } },
       {
         $group: {
           _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
@@ -299,7 +318,7 @@ const getAnalytics = asyncHandler(async (req, res) => {
     ]),
     // Top selling items
     Order.aggregate([
-      { $match: { status: { $ne: 'Cancelled' } } },
+      { $match: { status: { $ne: 'CANCELLED' } } },
       { $unwind: '$items' },
       {
         $group: {
@@ -375,18 +394,20 @@ const cancelOrder = asyncHandler(async (req, res) => {
     throw new Error('Order not found');
   }
 
-  if (order.status === 'Cancelled') {
+  const currentStatus = order.status?.toUpperCase();
+
+  if (currentStatus === 'CANCELLED') {
     res.status(400);
     throw new Error('Order is already cancelled');
   }
 
-  const { valid, message } = Order.validateTransition(order.status, 'Cancelled');
+  const { valid, message } = Order.validateTransition(currentStatus, 'CANCELLED');
   if (!valid) {
     res.status(400);
     throw new Error(message);
   }
 
-  order.status = 'Cancelled';
+  order.status = 'CANCELLED';
   await order.save();
 
   const io = req.app.get('io');
