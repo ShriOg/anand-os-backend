@@ -19,7 +19,8 @@ const {
   getAnalytics,
   deleteOrder,
   getUserByPhone,
-  cancelOrder
+  cancelOrder,
+  getInsights
 } = require('../controllers/restaurantController');
 
 const router = express.Router();
@@ -72,6 +73,7 @@ router.post(
 // ── Admin-only ──
 router.get('/stats', /* protect, admin, */ getStats);
 router.get('/analytics', /* protect, admin, */ getAnalytics);
+router.get('/insights', /* protect, admin, */ getInsights);
 router.get('/orders', /* protect, admin, */ getAllOrders);
 router.get('/orders/today', /* protect, admin, */ getTodayOrders);
 router.get('/menu/all', /* protect, admin, */ getMenuAll);

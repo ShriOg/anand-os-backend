@@ -137,6 +137,52 @@ const createOrder = asyncHandler(async (req, res) => {
     }
   }
 
+  // Get suggested upsell items (top 3 from last 7 days, same/complementary category)
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+  const orderedCategories = new Set();
+  const orderedItemIds = new Set();
+
+  for (const item of orderItems) {
+    const menuItem = menuMap.get(item.itemId.toString());
+    if (menuItem) {
+      orderedCategories.add(menuItem.category);
+      orderedItemIds.add(item.itemId.toString());
+    }
+  }
+
+  const suggestedItems = await Order.aggregate([
+    { $match: { createdAt: { $gte: sevenDaysAgo }, status: { $ne: 'CANCELLED' } } },
+    { $unwind: '$items' },
+    {
+      $match: {
+        'items.itemId': { $nin: Array.from(orderedItemIds).map(id => require('mongoose').Types.ObjectId(id)) }
+      }
+    },
+    {
+      $group: {
+        _id: '$items.name',
+        quantity: { $sum: '$items.quantity' }
+      }
+    },
+    { $sort: { quantity: -1 } },
+    { $limit: 3 }
+  ]);
+
+  // Enrich suggested items with menu data
+  const enrichedSuggestions = [];
+  for (const suggestion of suggestedItems) {
+    const menuItem = await MenuItem.findOne({ name: suggestion._id });
+    if (menuItem) {
+      enrichedSuggestions.push({
+        name: menuItem.name,
+        category: menuItem.category,
+        price: menuItem.prices[0]?.value || 0
+      });
+    }
+  }
+
   // Emit new order to the customer's room and admin room
   const io = req.app.get('io');
   if (io) {
@@ -151,7 +197,8 @@ const createOrder = asyncHandler(async (req, res) => {
       total: order.total,
       status: order.status,
       estimatedMinutes: order.estimatedMinutes,
-      estimatedCompletionTime: order.estimatedCompletionTime
+      estimatedCompletionTime: order.estimatedCompletionTime,
+      suggestedItems: enrichedSuggestions
     }
   });
 });
@@ -242,6 +289,14 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
   if (io) {
     io.to(`user_${order.phone}`).emit('restaurant:order-updated', order);
     io.to('admin').emit('restaurant:order-updated', order);
+
+    // If order is completed, recalculate and emit top selling item
+    if (nextStatus === 'COMPLETED') {
+      const topItem = await getTopSellingToday();
+      if (topItem) {
+        io.to('admin').emit('restaurant:top-item-update', topItem);
+      }
+    }
   }
 
   res.json({ success: true, data: order });
@@ -303,7 +358,24 @@ const getAnalytics = asyncHandler(async (req, res) => {
   const sevenDaysAgo = new Date(now);
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
-  const [dailyRevenue, topItems, ordersByStatus] = await Promise.all([
+  const thisWeekStart = new Date(now);
+  thisWeekStart.setDate(thisWeekStart.getDate() - 7);
+  thisWeekStart.setHours(0, 0, 0, 0);
+
+  const lastWeekStart = new Date(now);
+  lastWeekStart.setDate(lastWeekStart.getDate() - 14);
+  lastWeekStart.setHours(0, 0, 0, 0);
+
+  const [
+    dailyRevenue,
+    topItems,
+    ordersByStatus,
+    repeatCustomersData,
+    totalCustomers,
+    avgPrepTimeData,
+    thisWeekRevenueData,
+    lastWeekRevenueData
+  ] = await Promise.all([
     // Revenue per day (last 7 days)
     Order.aggregate([
       { $match: { createdAt: { $gte: sevenDaysAgo }, status: { $ne: 'CANCELLED' } } },
@@ -333,15 +405,53 @@ const getAnalytics = asyncHandler(async (req, res) => {
     // Orders by status
     Order.aggregate([
       { $group: { _id: '$status', count: { $sum: 1 } } }
+    ]),
+    // Repeat customers
+    Order.aggregate([
+      { $match: { status: { $ne: 'CANCELLED' } } },
+      { $group: { _id: '$phone', orderCount: { $sum: 1 } } },
+      { $match: { orderCount: { $gt: 1 } } },
+      { $count: 'repeatCount' }
+    ]),
+    // Total unique customers
+    Order.distinct('phone'),
+    // Average prep time (last 7 days)
+    Order.aggregate([
+      { $match: { status: 'COMPLETED', createdAt: { $gte: sevenDaysAgo }, actualCompletionTime: { $exists: true } } },
+      { $group: { _id: null, avgTime: { $avg: '$actualCompletionTime' } } }
+    ]),
+    // This week revenue
+    Order.aggregate([
+      { $match: { status: { $ne: 'CANCELLED' }, createdAt: { $gte: thisWeekStart } } },
+      { $group: { _id: null, total: { $sum: '$total' } } }
+    ]),
+    // Last week revenue
+    Order.aggregate([
+      { $match: { status: { $ne: 'CANCELLED' }, createdAt: { $gte: lastWeekStart, $lt: thisWeekStart } } },
+      { $group: { _id: null, total: { $sum: '$total' } } }
     ])
   ]);
+
+  // Calculate new metrics
+  const repeatCustomerCount = repeatCustomersData.length > 0 ? repeatCustomersData[0].repeatCount : 0;
+  const totalCustomerCount = totalCustomers.length;
+  const repeatRate = totalCustomerCount > 0 ? ((repeatCustomerCount / totalCustomerCount) * 100).toFixed(2) : 0;
+
+  const averagePrepTime = avgPrepTimeData.length > 0 ? Math.round(avgPrepTimeData[0].avgTime) : 0;
+
+  const thisWeekRevenue = thisWeekRevenueData.length > 0 ? thisWeekRevenueData[0].total : 0;
+  const lastWeekRevenue = lastWeekRevenueData.length > 0 ? lastWeekRevenueData[0].total : 0;
+  const weeklyGrowth = lastWeekRevenue > 0 ? (((thisWeekRevenue - lastWeekRevenue) / lastWeekRevenue) * 100).toFixed(2) : 0;
 
   res.json({
     success: true,
     data: {
       dailyRevenue,
       topItems,
-      ordersByStatus
+      ordersByStatus,
+      repeatRate: parseFloat(repeatRate),
+      averagePrepTimeMinutes: averagePrepTime,
+      weeklyGrowth: parseFloat(weeklyGrowth)
     }
   });
 });
@@ -419,6 +529,161 @@ const cancelOrder = asyncHandler(async (req, res) => {
   res.json({ success: true, data: order });
 });
 
+// @desc    Get top selling item today (LIVE)
+// @route   Internal helper
+const getTopSellingToday = asyncHandler(async () => {
+  const startOfDay = new Date();
+  startOfDay.setHours(0, 0, 0, 0);
+
+  const result = await Order.aggregate([
+    { $match: { status: 'COMPLETED', createdAt: { $gte: startOfDay } } },
+    { $unwind: '$items' },
+    {
+      $group: {
+        _id: '$items.name',
+        totalSold: { $sum: '$items.quantity' }
+      }
+    },
+    { $sort: { totalSold: -1 } },
+    { $limit: 1 }
+  ]);
+
+  if (result.length === 0) {
+    return null;
+  }
+
+  return {
+    itemName: result[0]._id,
+    totalSold: result[0].totalSold
+  };
+});
+
+// @desc    Get comprehensive restaurant insights
+// @route   GET /api/restaurant/insights
+const getInsights = asyncHandler(async (req, res) => {
+  const now = new Date();
+  const startOfDay = new Date(now);
+  startOfDay.setHours(0, 0, 0, 0);
+
+  const sevenDaysAgo = new Date(now);
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+  const thirtyDaysAgo = new Date(now);
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+  const lastWeekStart = new Date(now);
+  lastWeekStart.setDate(lastWeekStart.getDate() - 14);
+  lastWeekStart.setHours(0, 0, 0, 0);
+
+  const thisWeekStart = new Date(now);
+  thisWeekStart.setDate(thisWeekStart.getDate() - 7);
+  thisWeekStart.setHours(0, 0, 0, 0);
+
+  const [
+    topSellingToday,
+    repeatCustomersData,
+    totalCustomers,
+    avgPrepTimeData,
+    thisWeekRevenueData,
+    lastWeekRevenueData,
+    thirtyDayRevenue
+  ] = await Promise.all([
+    // 1. Top selling item today
+    Order.aggregate([
+      { $match: { status: 'COMPLETED', createdAt: { $gte: startOfDay } } },
+      { $unwind: '$items' },
+      { $group: { _id: '$items.name', totalSold: { $sum: '$items.quantity' } } },
+      { $sort: { totalSold: -1 } },
+      { $limit: 1 }
+    ]),
+
+    // 2. Repeat customers (orders > 1)
+    Order.aggregate([
+      { $match: { status: { $ne: 'CANCELLED' } } },
+      { $group: { _id: '$phone', orderCount: { $sum: 1 } } },
+      { $match: { orderCount: { $gt: 1 } } },
+      { $count: 'repeatCount' }
+    ]),
+
+    // 3. Total unique customers
+    Order.distinct('phone'),
+
+    // 4. Average prep time (last 7 days)
+    Order.aggregate([
+      { $match: { status: 'COMPLETED', createdAt: { $gte: sevenDaysAgo }, actualCompletionTime: { $exists: true } } },
+      { $group: { _id: null, avgTime: { $avg: '$actualCompletionTime' } } }
+    ]),
+
+    // 5. This week revenue
+    Order.aggregate([
+      { $match: { status: { $ne: 'CANCELLED' }, createdAt: { $gte: thisWeekStart } } },
+      { $group: { _id: null, total: { $sum: '$total' } } }
+    ]),
+
+    // 6. Last week revenue
+    Order.aggregate([
+      { $match: { status: { $ne: 'CANCELLED' }, createdAt: { $gte: lastWeekStart, $lt: thisWeekStart } } },
+      { $group: { _id: null, total: { $sum: '$total' } } }
+    ]),
+
+    // 7. 30-day revenue trend
+    Order.aggregate([
+      { $match: { status: { $ne: 'CANCELLED' }, createdAt: { $gte: thirtyDaysAgo } } },
+      {
+        $group: {
+          _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
+          total: { $sum: '$total' }
+        }
+      },
+      { $sort: { _id: 1 } }
+    ])
+  ]);
+
+  // Calculate metrics
+  const topItem = topSellingToday.length > 0 ? {
+    itemName: topSellingToday[0]._id,
+    totalSold: topSellingToday[0].totalSold
+  } : null;
+
+  const repeatCustomerCount = repeatCustomersData.length > 0 ? repeatCustomersData[0].repeatCount : 0;
+  const totalCustomerCount = totalCustomers.length;
+  const repeatRate = totalCustomerCount > 0 ? ((repeatCustomerCount / totalCustomerCount) * 100).toFixed(2) : 0;
+
+  const averagePrepTime = avgPrepTimeData.length > 0 ? Math.round(avgPrepTimeData[0].avgTime) : 0;
+
+  const thisWeekRevenue = thisWeekRevenueData.length > 0 ? thisWeekRevenueData[0].total : 0;
+  const lastWeekRevenue = lastWeekRevenueData.length > 0 ? lastWeekRevenueData[0].total : 0;
+  const weeklyGrowth = lastWeekRevenue > 0 ? (((thisWeekRevenue - lastWeekRevenue) / lastWeekRevenue) * 100).toFixed(2) : 0;
+
+  // Suggested insights
+  const suggestedInsights = [];
+  if (topItem && topItem.totalSold > 0) {
+    suggestedInsights.push(`Top item today: ${topItem.itemName} (${topItem.totalSold} sold)`);
+  }
+  if (parseFloat(repeatRate) > 30) {
+    suggestedInsights.push(`Strong repeat customer rate: ${repeatRate}%`);
+  } else if (parseFloat(repeatRate) < 20) {
+    suggestedInsights.push(`Low repeat customer rate: ${repeatRate}%. Focus on retention!`);
+  }
+  if (parseFloat(weeklyGrowth) > 0) {
+    suggestedInsights.push(`Revenue growing: +${weeklyGrowth}% week-over-week`);
+  } else if (parseFloat(weeklyGrowth) < 0) {
+    suggestedInsights.push(`Revenue declining: ${weeklyGrowth}% week-over-week`);
+  }
+
+  res.json({
+    success: true,
+    data: {
+      topSellingToday: topItem,
+      repeatRate: parseFloat(repeatRate),
+      averagePrepTimeMinutes: averagePrepTime,
+      weeklyGrowth: parseFloat(weeklyGrowth),
+      revenueTrend: thirtyDayRevenue,
+      suggestedInsights
+    }
+  });
+});
+
 module.exports = {
   getMenu,
   getMenuAll,
@@ -431,5 +696,7 @@ module.exports = {
   getAnalytics,
   deleteOrder,
   getUserByPhone,
-  cancelOrder
+  cancelOrder,
+  getTopSellingToday,
+  getInsights
 };
