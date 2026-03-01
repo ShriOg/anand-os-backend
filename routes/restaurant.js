@@ -7,6 +7,7 @@ const { protect } = require('../middleware/authMiddleware');
 const { admin } = require('../middleware/roleMiddleware');
 const User = require('../models/User');
 const Customer = require('../models/Customer');
+const Order = require('../models/Order');
 const {
   getMenu,
   getMenuAll,
@@ -122,38 +123,40 @@ router.patch(
 
 router.get("/customers", async (req, res) => {
   try {
-    const customers = await Customer.find({})
-      .sort({ createdAt: -1 });
+    const customers = await Customer.find().lean();
 
-    // Enrich customer data with dynamically calculated metrics from COMPLETED orders
-    const enrichedCustomers = await Promise.all(
-      customers.map(async (customer) => {
-        const completedOrdersCount = await Order.countDocuments({
-          phone: customer.phone,
-          status: 'COMPLETED'
-        });
+    if (!customers.length) {
+      return res.json({
+        success: true,
+        customers: [],
+        data: [],
+        stats: {
+          totalCustomers: 0,
+          totalRevenue: 0,
+          totalOrders: 0,
+          avgSpend: 0
+        }
+      });
+    }
 
-        const completedRevenue = await Order.aggregate([
-          { $match: { phone: customer.phone, status: 'COMPLETED' } },
-          { $group: { _id: null, total: { $sum: '$total' } } }
-        ]);
+    const completedOrders = await Order.find({ status: 'COMPLETED' }).lean();
 
-        const totalSpent = completedRevenue.length > 0 ? completedRevenue[0].total : 0;
+    const totalRevenue = completedOrders.reduce((sum, order) => sum + (Number(order.total) || 0), 0);
+    const totalOrders = completedOrders.length;
+    const totalCustomers = customers.length;
 
-        return {
-          ...customer.toObject(),
-          totalOrders: completedOrdersCount,     // Override with calculated value
-          totalSpent,                            // Override with calculated value
-          // Keep stored values for reference/legacy
-          _storedTotalOrders: customer.totalOrders,
-          _storedTotalSpent: customer.totalSpent
-        };
-      })
-    );
+    const avgSpend = totalCustomers > 0 ? totalRevenue / totalCustomers : 0;
 
     return res.json({
       success: true,
-      data: enrichedCustomers
+      customers,
+      data: customers,
+      stats: {
+        totalCustomers,
+        totalRevenue,
+        totalOrders,
+        avgSpend
+      }
     });
 
   } catch (error) {
