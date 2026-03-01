@@ -22,7 +22,12 @@ const restaurantRoutes = require('./routes/restaurant');
 const app = express();
 
 connectDB().then(() => {
-  try { autoSeedMenu(); } catch (err) { console.error('[MenuSeed] Error:', err.message); }
+  if (process.env.NODE_ENV === "development") {
+    console.log("🌱 Development mode detected — seeding menu...");
+    try { autoSeedMenu(); } catch (err) { console.error('[MenuSeed] Error:', err.message); }
+  } else {
+    console.log("🚀 Production mode — skipping menu seeding.");
+  }
 });
 
 app.use(helmet());

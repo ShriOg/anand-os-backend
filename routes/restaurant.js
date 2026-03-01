@@ -125,9 +125,35 @@ router.get("/customers", async (req, res) => {
     const customers = await Customer.find({})
       .sort({ createdAt: -1 });
 
+    // Enrich customer data with dynamically calculated metrics from COMPLETED orders
+    const enrichedCustomers = await Promise.all(
+      customers.map(async (customer) => {
+        const completedOrdersCount = await Order.countDocuments({
+          phone: customer.phone,
+          status: 'COMPLETED'
+        });
+
+        const completedRevenue = await Order.aggregate([
+          { $match: { phone: customer.phone, status: 'COMPLETED' } },
+          { $group: { _id: null, total: { $sum: '$total' } } }
+        ]);
+
+        const totalSpent = completedRevenue.length > 0 ? completedRevenue[0].total : 0;
+
+        return {
+          ...customer.toObject(),
+          totalOrders: completedOrdersCount,     // Override with calculated value
+          totalSpent,                            // Override with calculated value
+          // Keep stored values for reference/legacy
+          _storedTotalOrders: customer.totalOrders,
+          _storedTotalSpent: customer.totalSpent
+        };
+      })
+    );
+
     return res.json({
       success: true,
-      data: customers
+      data: enrichedCustomers
     });
 
   } catch (error) {

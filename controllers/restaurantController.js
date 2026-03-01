@@ -97,18 +97,6 @@ const createOrder = asyncHandler(async (req, res) => {
     estimatedCompletionTime
   });
 
-  // Update persistent customer stats
-  await Customer.findOneAndUpdate(
-    { phone },
-    {
-      $inc: {
-        totalOrders: 1,
-        totalSpent: order.total,
-        points: Math.floor(order.total / 10)
-      }
-    }
-  );
-
   // Loyalty: award points + badges if authenticated
   if (req.user) {
     const updatedUser = await User.findByIdAndUpdate(
@@ -280,6 +268,20 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
     order.actualCompletionTime = Math.round(
       (order.completedAt.getTime() - order.createdAt.getTime()) / 60000
     );
+
+    // ONLY update customer stats when order is COMPLETED
+    // This ensures revenue & loyalty metrics are accurate
+    await Customer.findOneAndUpdate(
+      { phone: order.phone },
+      {
+        $inc: {
+          totalOrders: 1,
+          totalSpent: order.total,
+          points: Math.floor(order.total / 10)
+        }
+      },
+      { upsert: true }
+    );
   }
 
   await order.save();
@@ -325,28 +327,33 @@ const getStats = asyncHandler(async (req, res) => {
   const startOfDay = new Date();
   startOfDay.setHours(0, 0, 0, 0);
 
-  const [totalOrders, totalRevenueAgg, todayRevenueAgg, todayOrders, totalCustomers] = await Promise.all([
-    Order.countDocuments(),
+  const [completedOrdersCount, totalRevenueAgg, todayRevenueAgg, completedTodayCount, totalCustomers] = await Promise.all([
+    // Count only COMPLETED orders (business metric)
+    Order.countDocuments({ status: 'COMPLETED' }),
+    // Revenue from COMPLETED orders only
     Order.aggregate([
-      { $match: { status: { $ne: 'CANCELLED' } } },
+      { $match: { status: 'COMPLETED' } },
       { $group: { _id: null, total: { $sum: '$total' } } }
     ]),
+    // Today's revenue from COMPLETED orders only
     Order.aggregate([
-      { $match: { createdAt: { $gte: startOfDay }, status: { $ne: 'CANCELLED' } } },
+      { $match: { createdAt: { $gte: startOfDay }, status: 'COMPLETED' } },
       { $group: { _id: null, total: { $sum: '$total' } } }
     ]),
-    Order.countDocuments({ createdAt: { $gte: startOfDay } }),
-    Order.distinct('phone')
+    // Count only COMPLETED orders today (business metric)
+    Order.countDocuments({ createdAt: { $gte: startOfDay }, status: 'COMPLETED' }),
+    // Get total customers from Customer collection (single source of truth)
+    Customer.countDocuments()
   ]);
 
   res.json({
     success: true,
     data: {
-      totalOrders,
-      todayOrders,
+      totalOrders: completedOrdersCount,
+      todayOrders: completedTodayCount,
       totalRevenue: totalRevenueAgg[0]?.total || 0,
       todayRevenue: todayRevenueAgg[0]?.total || 0,
-      totalCustomers: totalCustomers.length
+      totalCustomers
     }
   });
 });
@@ -376,9 +383,9 @@ const getAnalytics = asyncHandler(async (req, res) => {
     thisWeekRevenueData,
     lastWeekRevenueData
   ] = await Promise.all([
-    // Revenue per day (last 7 days)
+    // Revenue per day (last 7 days) - COMPLETED orders only
     Order.aggregate([
-      { $match: { createdAt: { $gte: sevenDaysAgo }, status: { $ne: 'CANCELLED' } } },
+      { $match: { createdAt: { $gte: sevenDaysAgo }, status: 'COMPLETED' } },
       {
         $group: {
           _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
@@ -388,9 +395,9 @@ const getAnalytics = asyncHandler(async (req, res) => {
       },
       { $sort: { _id: 1 } }
     ]),
-    // Top selling items
+    // Top selling items - COMPLETED orders only
     Order.aggregate([
-      { $match: { status: { $ne: 'CANCELLED' } } },
+      { $match: { status: 'COMPLETED' } },
       { $unwind: '$items' },
       {
         $group: {
@@ -406,36 +413,35 @@ const getAnalytics = asyncHandler(async (req, res) => {
     Order.aggregate([
       { $group: { _id: '$status', count: { $sum: 1 } } }
     ]),
-    // Repeat customers
+    // Repeat customers - COMPLETED orders only
     Order.aggregate([
-      { $match: { status: { $ne: 'CANCELLED' } } },
+      { $match: { status: 'COMPLETED' } },
       { $group: { _id: '$phone', orderCount: { $sum: 1 } } },
       { $match: { orderCount: { $gt: 1 } } },
       { $count: 'repeatCount' }
     ]),
-    // Total unique customers
-    Order.distinct('phone'),
-    // Average prep time (last 7 days)
+    // Total unique customers from Customer collection (single source of truth)
+    Customer.countDocuments(),
+    // Average prep time (last 7 days) - COMPLETED orders only
     Order.aggregate([
       { $match: { status: 'COMPLETED', createdAt: { $gte: sevenDaysAgo }, actualCompletionTime: { $exists: true } } },
       { $group: { _id: null, avgTime: { $avg: '$actualCompletionTime' } } }
     ]),
-    // This week revenue
+    // This week revenue - COMPLETED orders only
     Order.aggregate([
-      { $match: { status: { $ne: 'CANCELLED' }, createdAt: { $gte: thisWeekStart } } },
+      { $match: { status: 'COMPLETED', createdAt: { $gte: thisWeekStart } } },
       { $group: { _id: null, total: { $sum: '$total' } } }
     ]),
-    // Last week revenue
+    // Last week revenue - COMPLETED orders only
     Order.aggregate([
-      { $match: { status: { $ne: 'CANCELLED' }, createdAt: { $gte: lastWeekStart, $lt: thisWeekStart } } },
+      { $match: { status: 'COMPLETED', createdAt: { $gte: lastWeekStart, $lt: thisWeekStart } } },
       { $group: { _id: null, total: { $sum: '$total' } } }
     ])
   ]);
 
   // Calculate new metrics
   const repeatCustomerCount = repeatCustomersData.length > 0 ? repeatCustomersData[0].repeatCount : 0;
-  const totalCustomerCount = totalCustomers.length;
-  const repeatRate = totalCustomerCount > 0 ? ((repeatCustomerCount / totalCustomerCount) * 100).toFixed(2) : 0;
+  const repeatRate = totalCustomers > 0 ? ((repeatCustomerCount / totalCustomers) * 100).toFixed(2) : 0;
 
   const averagePrepTime = avgPrepTimeData.length > 0 ? Math.round(avgPrepTimeData[0].avgTime) : 0;
 
@@ -597,16 +603,16 @@ const getInsights = asyncHandler(async (req, res) => {
       { $limit: 1 }
     ]),
 
-    // 2. Repeat customers (orders > 1)
+    // 2. Repeat customers (COMPLETED orders only)
     Order.aggregate([
-      { $match: { status: { $ne: 'CANCELLED' } } },
+      { $match: { status: 'COMPLETED' } },
       { $group: { _id: '$phone', orderCount: { $sum: 1 } } },
       { $match: { orderCount: { $gt: 1 } } },
       { $count: 'repeatCount' }
     ]),
 
-    // 3. Total unique customers
-    Order.distinct('phone'),
+    // 3. Total unique customers from Customer collection
+    Customer.countDocuments(),
 
     // 4. Average prep time (last 7 days)
     Order.aggregate([
@@ -614,21 +620,21 @@ const getInsights = asyncHandler(async (req, res) => {
       { $group: { _id: null, avgTime: { $avg: '$actualCompletionTime' } } }
     ]),
 
-    // 5. This week revenue
+    // 5. This week revenue (COMPLETED orders only)
     Order.aggregate([
-      { $match: { status: { $ne: 'CANCELLED' }, createdAt: { $gte: thisWeekStart } } },
+      { $match: { status: 'COMPLETED', createdAt: { $gte: thisWeekStart } } },
       { $group: { _id: null, total: { $sum: '$total' } } }
     ]),
 
-    // 6. Last week revenue
+    // 6. Last week revenue (COMPLETED orders only)
     Order.aggregate([
-      { $match: { status: { $ne: 'CANCELLED' }, createdAt: { $gte: lastWeekStart, $lt: thisWeekStart } } },
+      { $match: { status: 'COMPLETED', createdAt: { $gte: lastWeekStart, $lt: thisWeekStart } } },
       { $group: { _id: null, total: { $sum: '$total' } } }
     ]),
 
-    // 7. 30-day revenue trend
+    // 7. 30-day revenue trend (COMPLETED orders only)
     Order.aggregate([
-      { $match: { status: { $ne: 'CANCELLED' }, createdAt: { $gte: thirtyDaysAgo } } },
+      { $match: { status: 'COMPLETED', createdAt: { $gte: thirtyDaysAgo } } },
       {
         $group: {
           _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
@@ -646,8 +652,7 @@ const getInsights = asyncHandler(async (req, res) => {
   } : null;
 
   const repeatCustomerCount = repeatCustomersData.length > 0 ? repeatCustomersData[0].repeatCount : 0;
-  const totalCustomerCount = totalCustomers.length;
-  const repeatRate = totalCustomerCount > 0 ? ((repeatCustomerCount / totalCustomerCount) * 100).toFixed(2) : 0;
+  const repeatRate = totalCustomers > 0 ? ((repeatCustomerCount / totalCustomers) * 100).toFixed(2) : 0;
 
   const averagePrepTime = avgPrepTimeData.length > 0 ? Math.round(avgPrepTimeData[0].avgTime) : 0;
 
